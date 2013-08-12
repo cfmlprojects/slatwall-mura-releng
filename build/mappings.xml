@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<mappings>
+<!-- 
+  <mapping physical="@src.dir@/../tests" virtual="/tests"/>
+  <mapping physical="@src.dir@/slatwall-mura-releng" virtual="/slatwall-mura-releng"/>
+ -->
+<mapping physical="@ext.mappings.dir@/org.mxunit/core/2.1.3/mxunit" virtual="/mxunit"/>
+<mapping physical="@src.dir@/" virtual="/"/>
+<mapping physical="@src.dir@/../tests" virtual="/tests"/>
+<mapping physical="@war.target.dir@/WEB-INF/lib/railo-server" virtual="/WEB-INF/lib/railo-server"/>
+<mapping physical="@src.dir@/plugins/slatwall" virtual="/Slatwall"/>
+</mappings>
