@@ -39,7 +39,7 @@
 		<loadfile srcFile="${src.dir}/Slatwall/version.txt" property="slatwall.version"/>
 	</target>
 
-	<target name="build.mvn.deploy" depends="project.update,slatwall.getversion">
+	<target name="build.mvn.deploy" depends="project.update,slatwall.getversion,build.test">
 	    <property name="mvn.repo.dest" value="local" />
 	    <property name="mvn.repo.dest" value="remote" />
 	    <property name="mvn.repo.id" value="mvn.repo.${mvn.repo.dest}" />
