@@ -1,8 +1,8 @@
 <project name="distro.build" default="build" basedir="./" xmlns:antcontrib="antlib:net.sf.antcontrib">
 
 	<loadproperties srcfile="build.properties"/>
-	<property name="mxunit.tests.dir" location="${src.dir}/Slatwall/meta/tests" />
 	<property name="mxunit.runner" value="/Slatwall/meta/tests/HttpAntRunner.cfc" />
+	<property name="mxunit.tests.dir" location="${src.dir}/Slatwall/meta/tests" />
 	<property name="mxunit.componentpath" value="Slatwall.meta.tests" />
 	<property name="mxunit.tests.results.dir" location="${dist.dir}/testresults" />
 	<property name="mxunit.recurse" value="true" />
@@ -11,12 +11,27 @@
 
 	<target name="build" depends="cfdistro.build">
 		<dependency groupId="org.mxunit" artifactId="core" version="${mxunit.version}" mapping="/mxunit" />
-		<dependency groupId="org.getmura" artifactId="mura" version="6.0" dest="${src.dir}" unzip="true" mapping="/" />
 		<dependency groupId="cfml.cfselenium" artifactId="cfselenium" version="2.28.0" mapping="/CFSelenium" />
+		<dependency groupId="org.getmura" artifactId="mura" version="6.0" dest="${src.dir}" unzip="true" mapping="/" />
 		<mapping physical="@src.dir@" virtual="/"/>
 		<mapping physical="@src.dir@/../tests" virtual="/tests"/>
 		<mapping physical="@war.target.dir@/WEB-INF/lib/railo-server" virtual="/WEB-INF/lib/railo-server"/>
 		<antcontrib:runtarget target="mura.initdb" />
+		<echo file="${src.dir}/Slatwall/custom/config/configApplication.cfm">
+		<![CDATA[<cfinclude template="../../../config/applicationSettings.cfm" />
+<cfinclude template="../../../config/mappings.cfm" />
+<cfinclude template="../../../plugins/mappings.cfm" />]]>
+		</echo>
+		<echo file="${src.dir}/config/cfapplication.cfm">
+		<![CDATA[<!--- Add Custom Application.cfc Vars Here --->
+<!---[START_SLATWALL_CONFIG]--->
+<cfset this.mappings["/Slatwall"] = "#this.mappings["/muraWRM"]#/Slatwall" />
+<cfset arrayAppend(this.ormSettings.cfclocation, "/Slatwall/model/entity") />
+<cfset arrayAppend(this.ormsettings.cfclocation, "/Slatwall/integrationServices") />
+<cfset this.customTagPaths = listAppend(this.customTagPaths, "#this.mappings["/Slatwall"]#/tags") />
+<cfset this.customTagPaths = listAppend(this.customTagPaths, "#this.mappings["/Slatwall"]#/org/Hibachi/HibachiTags") />
+<!---[END_SLATWALL_CONFIG]--->]]>
+		</echo>
 	</target>
 
 	<target name="build.test" depends="build">
@@ -24,14 +39,23 @@
 		<server-run>
 			<get src="http://${server.host}:${server.port.http}/index.cfm" dest="${temp.dir}/firedUpMuraNowDelMe" />
 			<antcontrib:post to="http://${server.host}:${server.port.http}/index.cfm?nocache=1" verbose="true" failonerror="true" logfile="/tmp/fart3.html">
-				<prop name="username" value="admin"/>
-				<prop name="password" value="admin"/>
+				<prop name="username" value="${mura.admin.username}"/>
+				<prop name="password" value="${mura.admin.password}"/>
 				<prop name="doaction" value="login"/>
 				<prop name="linkServID" value=""/>
 				<prop name="returnURL" value=""/>
 	    	</antcontrib:post>
 			<delete file="${temp.dir}/firedUpMuraNowDelMe" />
-			<antcontrib:runtarget target="mxunit.tests" />
+			<mxunit-call 
+				path="${mxunit.tests.dir}/unit" componentPath="${mxunit.componentpath}.unit"
+				packageName="${mxunit.componentpath}.unit" recurse="${mxunit.recurse}"
+				outputdir="${mxunit.tests.results.dir}/unit" failonerror="${mxunit.failonerror}"
+			/>
+			<mxunit-call 
+				path="${mxunit.tests.dir}/coverage" componentPath="${mxunit.componentpath}.coverage"
+				packageName="${mxunit.componentpath}.coverage" recurse="${mxunit.recurse}"
+				outputdir="${mxunit.tests.results.dir}/coverage" failonerror="${mxunit.failonerror}"
+			/>
 		</server-run>
 	</target>
 
@@ -53,33 +77,46 @@
 		 groupId="com.getslatwall" artifactId="slatwall-mura" version="${slatwall.version}" name="slatwall-mura"/>
 	</target>
 
-	<target name="mura.initdb" depends="exists.datasources.xml">
-		<sql
-			driver="${dsn.mura.class}"
-			url="${dsn.mura.url}"
-		    userid="${dsn.mura.username}"
-		    password="${dsn.mura.password}">
-			DROP DATABASE `${dsn.mura.database}`;
-			CREATE DATABASE `${dsn.mura.database}`;
-			<classpath>
-				<path refid="data.lib.path"/>
-			</classpath>
-		</sql>
-		<delete file="${src.dir}/config/settings.ini.cfm" />
-		<server-run>
-			<antcontrib:post to="http://${server.host}:${server.port.http}/index.cfm" verbose="false" property="mura.setupSubmitButton" failonerror="true"/>
-			<delete file="${src.dir}/config/settings.ini.cfm" />
-			<antcontrib:propertyregex override="yes" property="mura.setupSubmitButton" input="${mura.setupSubmitButton}" 
-				regexp=".*?type=&quot;submit&quot;\sname=&quot;([^&quot;]+).*?" select="\1" />
-			<echo message="${mura.setupSubmitButton}" />
-			<antcontrib:post to="http://${server.host}:${server.port.http}/index.cfm" verbose="false" file="setup.post.txt" failonerror="true">
-				<prop name="${mura.setupSubmitButton}" value="Save Settings"/>
-	    	</antcontrib:post>
-		</server-run>
-		<antcontrib:inifile source="${src.dir}/config/settings.ini.cfm" dest="${src.dir}/config/settings.ini.cfm">
-		   <set section="production" property="autodiscoverplugins" value="true" />
-		   <set section="production" property="trackSessionInNewThread" value="0" />
-		</antcontrib:inifile>
-	</target>
-	
+  <target name="mura.initdb" depends="exists.datasources.xml">
+    <sql driver="${dsn.mura.class}" classpathref="data.lib.path" url="${dsn.mura.url.base}" userid="${dsn.mura.username}"
+      password="${dsn.mura.password}">
+      DROP DATABASE IF EXISTS `${dsn.mura.database}`;
+      CREATE DATABASE `${dsn.mura.database}`;
+    </sql>
+    <echo message="recreating db: ${dsn.mura.database}" />
+    <delete file="${src.dir}/config/settings.ini.cfm" />
+    <server-run>
+      <antcontrib:post to="http://${server.host}:${server.port.http}/index.cfm" verbose="false" property="mura.setupSubmitButton"
+        failonerror="true" />
+      <antcontrib:propertyregex override="yes" property="mura.setupSubmitButton" input="${mura.setupSubmitButton}"
+        regexp=".*?type=&quot;submit&quot;\sname=&quot;([^&quot;]+).*?" select="\1" />
+      <echo message="mura.setupSubmitButton hash: ${mura.setupSubmitButton}" />
+      <antcontrib:post to="http://${server.host}:${server.port.http}/index.cfm" verbose="true" file="/tmp/setup.post.txt"
+        failonerror="true">
+        <prop name="production_dbtype" value="mysql" />
+        <prop name="auto_create" value="No" />
+        <prop name="production_datasource" value="mura" />
+        <prop name="production_cfpassword" value="" />
+        <prop name="production_databaseserver" value="localhost" />
+        <prop name="production_dbusername" value="${dsn.mura.username}" />
+        <prop name="production_dbpassword" value="${dsn.mura.password}" />
+        <prop name="production_dbtablespace" value="USERS" />
+        <prop name="production_assetpath" value="" />
+        <prop name="production_context" value="" />
+        <prop name="production_port" value="${server.port}" />
+        <prop name="admin_username" value="${mura.admin.username}" />
+        <prop name="admin_password" value="${mura.admin.password}" />
+        <prop name="production_adminemail" value="admin@localhost.com" />
+        <prop name="production_siteidinurls" value="0" />
+        <prop name="production_indexfileinurls" value="1" />
+        <prop name="${mura.setupSubmitButton}" value="Save Settings" />
+      </antcontrib:post>
+      <sql driver="${dsn.mura.class}" classpathref="data.lib.path" url="${dsn.mura.url}" userid="${dsn.mura.username}"
+        password="${dsn.mura.password}">
+        UPDATE tusers SET username = '${mura.admin.username}', password = md5('${mura.admin.password}') 
+        WHERE username = 'admin';
+      </sql>
+      <echo message="mura database successfully generated" />
+    </server-run>
+  </target>	
 </project>
